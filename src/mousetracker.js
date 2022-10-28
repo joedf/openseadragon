@@ -2575,7 +2575,8 @@
         updatePointerDown( tracker, eventInfo, gPoint, event.button );
 
         if ( eventInfo.preventDefault && !eventInfo.defaultPrevented ) {
-            $.cancelEvent( event );
+            // joedf (Fibics): comment-out for now
+            // $.cancelEvent( event );
         }
         if ( eventInfo.stopPropagation ) {
             $.stopEvent( event );

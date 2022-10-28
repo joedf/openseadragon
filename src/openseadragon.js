@@ -1111,7 +1111,8 @@ function OpenSeadragon( options ){
 
                         copy = descriptor.value;
                     } else {
-                        $.console.warn('Could not copy inherited property "' + name + '".');
+                        // joedf (Fibics): disable non-critical warning
+                        //$.console.warn('Could not copy inherited property "' + name + '".');
                         continue;
                     }
 
