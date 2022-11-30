@@ -212,7 +212,9 @@ $.Viewer = function( options ) {
         zoomFactor:        null,
         lastZoomTime:      null,
         fullPage:          false,
-        onfullscreenchange: null
+        onfullscreenchange: null,
+        lastClickTime: null,
+        draggingToZoom: false,
     };
 
     this._sequenceIndex = 0;
@@ -754,12 +756,25 @@ $.extend( $.Viewer.prototype, $.EventSource.prototype, $.ControlDock.prototype, 
      * viewer = null; //important
      *
      * @function
+     * @fires OpenSeadragon.Viewer.event:before-destroy
+     * @fires OpenSeadragon.Viewer.event:destroy
      */
     destroy: function( ) {
         if ( !THIS[ this.hash ] ) {
             //this viewer has already been destroyed: returning immediately
             return;
         }
+
+        /**
+         * Raised when the viewer is about to be destroyed (see {@link OpenSeadragon.Viewer#before-destroy}).
+         *
+         * @event before-destroy
+         * @memberof OpenSeadragon.Viewer
+         * @type {object}
+         * @property {OpenSeadragon.Viewer} eventSource - A reference to the Viewer which raised the event.
+         * @property {?Object} userData - Arbitrary subscriber-defined object.
+         */
+        this.raiseEvent( 'before-destroy' );
 
         this._removeUpdatePixelDensityRatioEvent();
 
@@ -793,7 +808,6 @@ $.extend( $.Viewer.prototype, $.EventSource.prototype, $.ControlDock.prototype, 
             this.navigator = null;
         }
 
-        this.removeAllHandlers();
 
         if (this.buttonGroup) {
             this.buttonGroup.destroy();
@@ -839,6 +853,19 @@ $.extend( $.Viewer.prototype, $.EventSource.prototype, $.ControlDock.prototype, 
 
         // clear our reference to the main element - they will need to pass it in again, creating a new viewer
         this.element = null;
+
+        /**
+         * Raised when the viewer is destroyed (see {@link OpenSeadragon.Viewer#destroy}).
+         *
+         * @event destroy
+         * @memberof OpenSeadragon.Viewer
+         * @type {object}
+         * @property {OpenSeadragon.Viewer} eventSource - A reference to the Viewer which raised the event.
+         * @property {?Object} userData - Arbitrary subscriber-defined object.
+         */
+        this.raiseEvent( 'destroy' );
+
+        this.removeAllHandlers();
     },
 
     /**
@@ -2854,6 +2881,8 @@ function onCanvasKeyPress( event ) {
     }
 }
 
+
+
 function onCanvasClick( event ) {
     var gestureSettings;
 
@@ -2893,17 +2922,31 @@ function onCanvasClick( event ) {
      * @property {Boolean} preventDefaultAction - Set to true to prevent default click to zoom behaviour. Default: false.
      * @property {?Object} userData - Arbitrary subscriber-defined object.
      */
+
     this.raiseEvent( 'canvas-click', canvasClickEventArgs);
+
 
     if ( !canvasClickEventArgs.preventDefaultAction && this.viewport && event.quick ) {
         gestureSettings = this.gestureSettingsByDeviceType( event.pointerType );
-        if ( gestureSettings.clickToZoom ) {
+
+        if (gestureSettings.clickToZoom === true){
             this.viewport.zoomBy(
                 event.shift ? 1.0 / this.zoomPerClick : this.zoomPerClick,
                 gestureSettings.zoomToRefPoint ? this.viewport.pointFromPixel( event.position, true ) : null
             );
             this.viewport.applyConstraints();
         }
+
+        if( gestureSettings.dblClickDragToZoom){
+            if(THIS[ this.hash ].draggingToZoom === true){
+                THIS[ this.hash ].lastClickTime = null;
+                THIS[ this.hash ].draggingToZoom = false;
+            }
+            else{
+                THIS[ this.hash ].lastClickTime = $.now();
+            }
+        }
+
     }
 }
 
@@ -2983,43 +3026,52 @@ function onCanvasDrag( event ) {
 
     gestureSettings = this.gestureSettingsByDeviceType( event.pointerType );
 
-    if ( gestureSettings.dragToPan && !canvasDragEventArgs.preventDefaultAction && this.viewport ) {
-        if( !this.panHorizontal ){
-            event.delta.x = 0;
+    if(!canvasDragEventArgs.preventDefaultAction && this.viewport){
+
+        if (gestureSettings.dblClickDragToZoom && THIS[ this.hash ].draggingToZoom){
+            var factor = Math.pow( this.zoomPerDblClickDrag, event.delta.y / 50);
+            this.viewport.zoomBy(factor);
         }
-        if( !this.panVertical ){
-            event.delta.y = 0;
-        }
-        if(this.viewport.flipped){
-            event.delta.x = -event.delta.x;
-        }
-
-        if( this.constrainDuringPan ){
-            var delta = this.viewport.deltaPointsFromPixels( event.delta.negate() );
-
-            this.viewport.centerSpringX.target.value += delta.x;
-            this.viewport.centerSpringY.target.value += delta.y;
-
-            var bounds = this.viewport.getBounds();
-            var constrainedBounds = this.viewport.getConstrainedBounds();
-
-            this.viewport.centerSpringX.target.value -= delta.x;
-            this.viewport.centerSpringY.target.value -= delta.y;
-
-            if (bounds.x !== constrainedBounds.x) {
+        else if (gestureSettings.dragToPan && !THIS[ this.hash ].draggingToZoom) {
+            if( !this.panHorizontal ){
                 event.delta.x = 0;
             }
-
-            if (bounds.y !== constrainedBounds.y) {
+            if( !this.panVertical ){
                 event.delta.y = 0;
             }
+            if(this.viewport.flipped){
+                event.delta.x = -event.delta.x;
+            }
+
+            if( this.constrainDuringPan ){
+                var delta = this.viewport.deltaPointsFromPixels( event.delta.negate() );
+
+                this.viewport.centerSpringX.target.value += delta.x;
+                this.viewport.centerSpringY.target.value += delta.y;
+
+                var bounds = this.viewport.getBounds();
+                var constrainedBounds = this.viewport.getConstrainedBounds();
+
+                this.viewport.centerSpringX.target.value -= delta.x;
+                this.viewport.centerSpringY.target.value -= delta.y;
+
+                if (bounds.x !== constrainedBounds.x) {
+                    event.delta.x = 0;
+                }
+
+                if (bounds.y !== constrainedBounds.y) {
+                    event.delta.y = 0;
+                }
+            }
+            this.viewport.panBy( this.viewport.deltaPointsFromPixels( event.delta.negate() ), gestureSettings.flickEnabled && !this.constrainDuringPan);
         }
 
-        this.viewport.panBy( this.viewport.deltaPointsFromPixels( event.delta.negate() ), gestureSettings.flickEnabled && !this.constrainDuringPan);
     }
+
 }
 
 function onCanvasDragEnd( event ) {
+    var gestureSettings;
     var canvasDragEndEventArgs = {
         tracker: event.eventSource,
         pointerType: event.pointerType,
@@ -3050,9 +3102,11 @@ function onCanvasDragEnd( event ) {
      */
      this.raiseEvent('canvas-drag-end', canvasDragEndEventArgs);
 
+     gestureSettings = this.gestureSettingsByDeviceType( event.pointerType );
+
     if (!canvasDragEndEventArgs.preventDefaultAction && this.viewport) {
-        var gestureSettings = this.gestureSettingsByDeviceType(event.pointerType);
-        if (gestureSettings.flickEnabled &&
+        if ( !THIS[ this.hash ].draggingToZoom &&
+            gestureSettings.flickEnabled &&
             event.speed >= gestureSettings.flickMinSpeed) {
             var amplitudeX = 0;
             if (this.panHorizontal) {
@@ -3072,6 +3126,13 @@ function onCanvasDragEnd( event ) {
         }
         this.viewport.applyConstraints();
     }
+
+
+    if( gestureSettings.dblClickDragToZoom && THIS[ this.hash ].draggingToZoom === true ){
+        THIS[ this.hash ].draggingToZoom = false;
+    }
+
+
 }
 
 function onCanvasEnter( event ) {
@@ -3135,6 +3196,8 @@ function onCanvasLeave( event ) {
 }
 
 function onCanvasPress( event ) {
+    var gestureSettings;
+
     /**
      * Raised when the primary mouse button is pressed or touch starts on the {@link OpenSeadragon.Viewer#canvas} element.
      *
@@ -3158,6 +3221,24 @@ function onCanvasPress( event ) {
         insideElementReleased: event.insideElementReleased,
         originalEvent: event.originalEvent
     });
+
+
+    gestureSettings = this.gestureSettingsByDeviceType( event.pointerType );
+    if ( gestureSettings.dblClickDragToZoom ){
+        var lastClickTime = THIS[ this.hash ].lastClickTime;
+        var currClickTime = $.now();
+
+        if ( lastClickTime === null) {
+            return;
+        }
+
+        if ((currClickTime - lastClickTime) < this.dblClickTimeThreshold) {
+            THIS[ this.hash ].draggingToZoom = true;
+        }
+
+        THIS[ this.hash ].lastClickTime = null;
+    }
+
 }
 
 function onCanvasRelease( event ) {
