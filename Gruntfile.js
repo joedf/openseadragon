@@ -64,7 +64,7 @@ module.exports = function(grunt) {
             "src/world.js"
         ];
 
-    var banner = "//! <%= pkg.name %> <%= pkg.version %> (v3.2.0 early build - joedf)\n" +
+    var banner = "//! <%= pkg.name %> <%= pkg.version %> (modified by joedf - fibics)\n" +
                  "//! Built on <%= grunt.template.today('yyyy-mm-dd') %>\n" +
                  "//! Git commit: <%= gitInfo %>\n" +
                  "//! http://openseadragon.github.io\n" +
